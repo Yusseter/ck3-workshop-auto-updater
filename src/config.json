@@ -1,0 +1,10 @@
+{
+  "AppId": "1158310",
+  "GameProcessName": "ck3",
+  "SteamWaitMinutes": 5,
+  "SteamInitializationDelaySeconds": 20,
+  "WorkshopResultTimeoutMinutes": 10,
+  "NoChangeRetryHours": 24,
+  "RequestRetries": 5,
+  "RequestRetryDelaySeconds": 10
+}

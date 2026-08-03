@@ -1,0 +1,33 @@
+# OS and editor files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE, local editor and agent folders
+.vscode/*
+!.vscode/
+!.vscode/c_cpp_properties.json
+!.vscode/extensions.json
+!.vscode/tasks.json
+.claude/
+.agents/
+.codex/
+.idea/
+.vs/
+.history/
+*.code-workspace
+
+# Runtime data
+data/
+State.json
+LastRun.log
+History.log
+*.log
+
+# Local backups
+*.bak.ps1
+*.tmp
+
+# Release output
+dist/
+*.zip
