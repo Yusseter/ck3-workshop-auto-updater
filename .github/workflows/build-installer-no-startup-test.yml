@@ -1,0 +1,145 @@
+name: Build no-startup installer test
+
+on:
+  workflow_dispatch:
+
+  push:
+    branches:
+      - "feat/windows-installer"
+    paths:
+      - ".github/workflows/build-installer-no-startup-test.yml"
+      - "installer/CK3WorkshopAutoUpdater.iss"
+      - "installer/RunHidden.vbs"
+      - "src/**"
+      - "VERSION"
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    name: Build no-startup test
+    runs-on: windows-2022
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Read project version
+        id: version
+        shell: pwsh
+        run: |
+          $version = (Get-Content -LiteralPath "VERSION" -Raw).Trim()
+
+          if ($version -notmatch '^\d+\.\d+\.\d+$') {
+              throw "VERSION must use semantic version format: $version"
+          }
+
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "APP_VERSION=$version" >> $env:GITHUB_ENV
+
+          Write-Host "Project version: $version"
+
+      - name: Locate Inno Setup compiler
+        shell: pwsh
+        run: |
+          $candidates = @()
+
+          $command = Get-Command "ISCC.exe" -ErrorAction SilentlyContinue |
+              Select-Object -First 1
+
+          if ($command) {
+              $candidates += [string] $command.Source
+          }
+
+          $candidates += @(
+              "C:\Program Files (x86)\Inno Setup 7\ISCC.exe"
+              "C:\Program Files\Inno Setup 7\ISCC.exe"
+              "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+              "C:\Program Files\Inno Setup 6\ISCC.exe"
+          )
+
+          $iscc = $candidates |
+              Where-Object {
+                  -not [string]::IsNullOrWhiteSpace($_) -and
+                  (Test-Path -LiteralPath $_)
+              } |
+              Select-Object -First 1
+
+          if (-not $iscc) {
+              throw "Inno Setup compiler was not found."
+          }
+
+          "ISCC_PATH=$iscc" >> $env:GITHUB_ENV
+
+          Write-Host "Inno Setup compiler: $iscc"
+
+      - name: Compile diagnostic installer
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path "dist" -Force |
+              Out-Null
+
+          & $env:ISCC_PATH `
+              "/DAppVersion=$env:APP_VERSION" `
+              "/DDiagnosticNoCompression" `
+              "/DDiagnosticNoStartup" `
+              "installer\CK3WorkshopAutoUpdater.iss"
+
+          if ($LASTEXITCODE -ne 0) {
+              throw "Diagnostic compilation failed: $LASTEXITCODE"
+          }
+
+      - name: Verify diagnostic filename
+        id: setup
+        shell: pwsh
+        run: |
+          $expectedName = (
+              "CK3WorkshopAutoUpdater-Setup-v" +
+              $env:APP_VERSION +
+              "-no-compression-no-startup-test.exe"
+          )
+
+          $setupPath = Join-Path "dist" $expectedName
+
+          if (-not (Test-Path -LiteralPath $setupPath)) {
+              throw "Expected installer was not created: $setupPath"
+          }
+
+          "name=$expectedName" >> $env:GITHUB_OUTPUT
+          "path=$setupPath" >> $env:GITHUB_OUTPUT
+
+          Write-Host "Diagnostic installer: $expectedName"
+
+      - name: Create SHA-256 file
+        shell: pwsh
+        run: |
+          $setupPath = "${{ steps.setup.outputs.path }}"
+
+          $hash = (
+              Get-FileHash `
+                  -LiteralPath $setupPath `
+                  -Algorithm SHA256
+          ).Hash.ToLowerInvariant()
+
+          $hashPath = [System.IO.Path]::ChangeExtension(
+              $setupPath,
+              ".sha256"
+          )
+
+          "$hash  $([System.IO.Path]::GetFileName($setupPath))" |
+              Set-Content `
+                  -LiteralPath $hashPath `
+                  -Encoding ASCII
+
+          Write-Host "SHA-256: $hash"
+
+      - name: Upload diagnostic artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ck3-workshop-auto-updater-no-compression-no-startup-test-v${{ steps.version.outputs.version }}
+          path: |
+            dist/*-no-compression-no-startup-test.exe
+            dist/*-no-compression-no-startup-test.sha256
+          if-no-files-found: error
+          retention-days: 7

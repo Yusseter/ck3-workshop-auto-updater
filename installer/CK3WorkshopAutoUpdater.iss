@@ -7,11 +7,21 @@
 #define AppURL "https://github.com/Yusseter/ck3-workshop-auto-updater"
 
 #ifdef DiagnosticNoCompression
-    #define OutputSuffix "-no-compression-test"
+    #ifdef DiagnosticNoStartup
+        #define OutputSuffix "-no-compression-no-startup-test"
+    #else
+        #define OutputSuffix "-no-compression-test"
+    #endif
+
     #define CompressionMode "none"
     #define SolidCompressionMode "no"
 #else
-    #define OutputSuffix ""
+    #ifdef DiagnosticNoStartup
+        #define OutputSuffix "-no-startup-test"
+    #else
+        #define OutputSuffix ""
+    #endif
+
     #define CompressionMode "lzma2"
     #define SolidCompressionMode "yes"
 #endif
@@ -47,7 +57,9 @@ Source: "RunHidden.vbs"; DestDir: "{app}"; Flags: ignoreversion
 Name: "{app}\data"
 
 [Icons]
+#ifndef DiagnosticNoStartup
 Name: "{userstartup}\CK3 Workshop Auto Updater"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\RunHidden.vbs"""; WorkingDir: "{app}"; Comment: "Checks CK3 Workshop items at Windows sign-in"
+#endif
 Name: "{group}\Run Now"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\RunHidden.vbs"""; WorkingDir: "{app}"
 Name: "{group}\Open Logs"; Filename: "{sys}\explorer.exe"; Parameters: """{app}\data"""
 Name: "{group}\Uninstall"; Filename: "{uninstallexe}"
