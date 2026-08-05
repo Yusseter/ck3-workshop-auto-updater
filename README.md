@@ -6,13 +6,15 @@ It does **not** delete Workshop manifests, unsubscribe from mods, or replace Ste
 
 ## Status
 
-Version: **0.1.1 (experimental)**
+Version: **0.2.0 (experimental)**
 
 Tested on one Windows 11 system with:
 
 - Steam
 - Crusader Kings III (AppID `1158310`)
-- PowerShell 7
+- Windows PowerShell 5.1 (included with Windows)
+
+PowerShell 7 is not required.
 
 Steam Client Beta was used during development, but it has not been proven to be required.
 

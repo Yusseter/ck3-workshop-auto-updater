@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.0 — 2026-08-05
+
+- Removed the PowerShell 7 requirement.
+- Added Windows PowerShell 5.1-compatible state loading.
+- Updated installation, hidden startup, and uninstallation to use Windows PowerShell included with Windows.
+
 ## 0.1.1 — 2026-08-05
 
 - Fixed formatted log messages incorrectly treating PowerShell's `-f` operator as a command parameter.

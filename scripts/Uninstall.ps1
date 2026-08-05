@@ -1,4 +1,4 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 
 $InstallFolder = Join-Path $env:LOCALAPPDATA "CK3WorkshopAutoUpdater"
 $StartupFolder = [Environment]::GetFolderPath("Startup")
