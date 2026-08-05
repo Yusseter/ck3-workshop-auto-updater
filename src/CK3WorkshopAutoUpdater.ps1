@@ -1,4 +1,4 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 
 $ConfigPath = Join-Path $PSScriptRoot "config.json"
 $DataFolder = Join-Path $PSScriptRoot "data"
@@ -293,6 +293,40 @@ function Get-RemoteWorkshopItems {
     return $RemoteItems
 }
 
+function ConvertTo-Hashtable {
+    param(
+        [Parameter(Mandatory = $false)]
+        $InputObject
+    )
+
+    if ($null -eq $InputObject) {
+        return $null
+    }
+
+    if ($InputObject -is [System.Collections.IDictionary]) {
+        $Result = @{}
+
+        foreach ($Key in $InputObject.Keys) {
+            $Result[[string] $Key] = ConvertTo-Hashtable `
+                -InputObject $InputObject[$Key]
+        }
+
+        return $Result
+    }
+
+    if ($InputObject -is [System.Management.Automation.PSCustomObject]) {
+        $Result = @{}
+
+        foreach ($Property in $InputObject.PSObject.Properties) {
+            $Result[$Property.Name] = ConvertTo-Hashtable `
+                -InputObject $Property.Value
+        }
+
+        return $Result
+    }
+
+    return $InputObject
+}
 function Get-State {
     if (-not (Test-Path -LiteralPath $StatePath)) {
         return @{}
@@ -305,7 +339,9 @@ function Get-State {
             return @{}
         }
 
-        return $Raw | ConvertFrom-Json -AsHashtable
+        $ParsedState = $Raw | ConvertFrom-Json
+
+        return ConvertTo-Hashtable -InputObject $ParsedState
     }
     catch {
         Write-Log "State.json could not be read. Continuing with an empty state."

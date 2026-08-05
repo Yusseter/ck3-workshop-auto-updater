@@ -1,4 +1,4 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 
 $ProjectRoot = Split-Path $PSScriptRoot -Parent
 $SourceFolder = Join-Path $ProjectRoot "src"
@@ -8,10 +8,12 @@ $StartupFolder = [Environment]::GetFolderPath("Startup")
 $ShortcutPath = Join-Path $StartupFolder "CK3 Workshop Auto Updater.lnk"
 $DisabledShortcutPath = "$ShortcutPath.disabled"
 
-$Pwsh = Get-Command pwsh.exe -ErrorAction SilentlyContinue
+$WindowsPowerShellPath = Join-Path `
+    $env:SystemRoot `
+    "System32\WindowsPowerShell\v1.0\powershell.exe"
 
-if (-not $Pwsh) {
-    throw "PowerShell 7 (pwsh.exe) is required but was not found."
+if (-not (Test-Path -LiteralPath $WindowsPowerShellPath)) {
+    throw "Windows PowerShell 5.1 was not found: $WindowsPowerShellPath"
 }
 
 if (-not (Test-Path -LiteralPath $SourceFolder)) {
@@ -51,10 +53,10 @@ foreach ($FileName in @("State.json", "History.log", "LastRun.log")) {
 
 $RuntimeScript = Join-Path $InstallFolder "CK3WorkshopAutoUpdater.ps1"
 $VbsPath = Join-Path $InstallFolder "RunHidden.vbs"
-$PwshPath = $Pwsh.Source
+$PowerShellPath = $WindowsPowerShellPath
 
 $CommandLine = (
-    '"' + $PwshPath +
+    '"' + $PowerShellPath +
     '" -NoProfile -ExecutionPolicy Bypass -File "' +
     $RuntimeScript +
     '"'

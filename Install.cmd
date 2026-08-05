@@ -2,15 +2,15 @@
 setlocal
 title CK3 Workshop Auto Updater - Install
 
-where pwsh.exe >nul 2>&1
-if errorlevel 1 (
-    echo PowerShell 7 ^(pwsh.exe^) is required.
-    echo Install PowerShell 7, then run this installer again.
+set "POWERSHELL_EXE=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
+
+if not exist "%POWERSHELL_EXE%" (
+    echo Windows PowerShell 5.1 was not found.
     pause
     exit /b 1
 )
 
-pwsh.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\Install.ps1"
+"%POWERSHELL_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\Install.ps1"
 set "EXITCODE=%ERRORLEVEL%"
 
 echo.
