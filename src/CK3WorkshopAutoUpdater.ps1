@@ -521,14 +521,14 @@ try {
         }
 
         if ($Suppressed) {
-            Write-Log -Message (
+            Write-Log -Message ((
                 "Skipped: {0} [{1}] — Steam previously returned OK without changing " +
                 "the installed manifest. Retry after: {2}"
             ) -f @(
                 $Candidate.Name
                 $Candidate.ModId
                 $RetryAfter.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
-            )
+            ))
 
             continue
         }
@@ -559,14 +559,14 @@ try {
         $AfterManifest = [string] $AfterItems[$Candidate.ModId].manifest
 
         if ($AfterManifest -ne $BeforeManifest) {
-            Write-Log -Message (
+            Write-Log -Message ((
                 "Updated: {0} [{1}] — installed manifest changed from {2} to {3}."
             ) -f @(
                 $Candidate.Name
                 $Candidate.ModId
                 $BeforeManifest
                 $AfterManifest
-            )
+            ))
 
             [void] $State.Remove($Candidate.ModId)
         }
@@ -584,7 +584,7 @@ try {
                 RetryAfter     = $RetryAfter.ToString("o")
             }
 
-            Write-Log -Message (
+            Write-Log -Message ((
                 "No change: {0} [{1}] — Steam returned OK, but the installed " +
                 "manifest did not change. The same remote manifest will not be " +
                 "forced again until {2}."
@@ -592,16 +592,16 @@ try {
                 $Candidate.Name
                 $Candidate.ModId
                 $RetryAfter.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
-            )
+            ))
         }
         else {
-            Write-Log -Message (
+            Write-Log -Message ((
                 "Incomplete: {0} [{1}] — Steam result: {2}"
             ) -f @(
                 $Candidate.Name
                 $Candidate.ModId
                 $Result.Result
-            )
+            ))
         }
 
         Save-State -State $State

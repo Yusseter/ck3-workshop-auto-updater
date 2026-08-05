@@ -6,7 +6,7 @@ It does **not** delete Workshop manifests, unsubscribe from mods, or replace Ste
 
 ## Status
 
-Version: **0.1.0 (experimental)**
+Version: **0.1.1 (experimental)**
 
 Tested on one Windows 11 system with:
 
