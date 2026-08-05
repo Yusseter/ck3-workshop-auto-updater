@@ -90,6 +90,23 @@ Double-click `Uninstall.cmd`.
 
 Steam, CK3, Workshop subscriptions, and Workshop content are left unchanged.
 
+## Building a release archive
+
+Release archives can be created by double-clicking:
+
+```text
+Build Release.cmd
+```
+
+The builder reads the version from `VERSION`, verifies that the current branch is `main` and the Git working tree is clean, and creates the following files:
+
+```text
+dist/ck3-workshop-auto-updater-v<VERSION>.zip
+dist/ck3-workshop-auto-updater-v<VERSION>.sha256
+```
+
+Only files committed to Git are included in the archive.
+
 ## GitHub publishing
 
 The repository is ready to publish. Runtime logs, state, backups, and generated release archives are excluded by `.gitignore`.

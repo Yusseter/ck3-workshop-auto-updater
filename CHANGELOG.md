@@ -5,6 +5,7 @@
 - Removed the PowerShell 7 requirement.
 - Added Windows PowerShell 5.1-compatible state loading.
 - Updated installation, hidden startup, and uninstallation to use Windows PowerShell included with Windows.
+- Added a release builder that creates versioned ZIP and SHA-256 files in `dist`.
 
 ## 0.1.1 — 2026-08-05
 
