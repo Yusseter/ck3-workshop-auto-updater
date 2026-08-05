@@ -6,6 +6,16 @@
 #define AppPublisher "Yusseter"
 #define AppURL "https://github.com/Yusseter/ck3-workshop-auto-updater"
 
+#ifdef DiagnosticNoCompression
+    #define OutputSuffix "-no-compression-test"
+    #define CompressionMode "none"
+    #define SolidCompressionMode "no"
+#else
+    #define OutputSuffix ""
+    #define CompressionMode "lzma2"
+    #define SolidCompressionMode "yes"
+#endif
+
 [Setup]
 AppId={{D4D0B2D0-2A77-4A50-A239-55436F57B7D7}
 AppName={#AppName}
@@ -20,9 +30,9 @@ DisableDirPage=yes
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 OutputDir=..\dist
-OutputBaseFilename=CK3WorkshopAutoUpdater-Setup-v{#AppVersion}
-Compression=lzma2
-SolidCompression=yes
+OutputBaseFilename=CK3WorkshopAutoUpdater-Setup-v{#AppVersion}{#OutputSuffix}
+Compression={#CompressionMode}
+SolidCompression={#SolidCompressionMode}
 WizardStyle=modern
 CloseApplications=no
 RestartApplications=no
