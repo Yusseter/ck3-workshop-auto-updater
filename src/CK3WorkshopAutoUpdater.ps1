@@ -439,6 +439,646 @@ function Wait-WorkshopResult {
     }
 }
 
+function Get-WorkshopManifestEncoding {
+    param(
+        [Parameter(Mandatory)]
+        [string] $Path
+    )
+
+    $Bytes = [System.IO.File]::ReadAllBytes($Path)
+
+    if (
+        $Bytes.Length -ge 3 -and
+        $Bytes[0] -eq 0xEF -and
+        $Bytes[1] -eq 0xBB -and
+        $Bytes[2] -eq 0xBF
+    ) {
+        return [System.Text.UTF8Encoding]::new($true)
+    }
+
+    if (
+        $Bytes.Length -ge 2 -and
+        $Bytes[0] -eq 0xFF -and
+        $Bytes[1] -eq 0xFE
+    ) {
+        return [System.Text.UnicodeEncoding]::new(
+            $false,
+            $true
+        )
+    }
+
+    if (
+        $Bytes.Length -ge 2 -and
+        $Bytes[0] -eq 0xFE -and
+        $Bytes[1] -eq 0xFF
+    ) {
+        return [System.Text.UnicodeEncoding]::new(
+            $true,
+            $true
+        )
+    }
+
+    return [System.Text.UTF8Encoding]::new($false)
+}
+
+function Find-NamedVdfBlock {
+    param(
+        [Parameter(Mandatory)]
+        [string[]] $Lines,
+
+        [Parameter(Mandatory)]
+        [string] $Name,
+
+        [int] $SearchStart = 0,
+
+        [int] $SearchEnd = -1
+    )
+
+    if ($SearchEnd -lt 0) {
+        $SearchEnd = $Lines.Count - 1
+    }
+
+    $NameLine = '"' + $Name + '"'
+
+    for (
+        $Index = $SearchStart;
+        $Index -le $SearchEnd;
+        $Index++
+    ) {
+        if ($Lines[$Index].Trim() -ne $NameLine) {
+            continue
+        }
+
+        $OpenIndex = $Index + 1
+
+        while (
+            $OpenIndex -le $SearchEnd -and
+            [string]::IsNullOrWhiteSpace(
+                $Lines[$OpenIndex]
+            )
+        ) {
+            $OpenIndex++
+        }
+
+        if (
+            $OpenIndex -gt $SearchEnd -or
+            $Lines[$OpenIndex].Trim() -ne "{"
+        ) {
+            continue
+        }
+
+        $Depth = 0
+
+        for (
+            $BlockIndex = $OpenIndex;
+            $BlockIndex -le $SearchEnd;
+            $BlockIndex++
+        ) {
+            $Trimmed = $Lines[$BlockIndex].Trim()
+
+            if ($Trimmed -eq "{") {
+                $Depth++
+                continue
+            }
+
+            if ($Trimmed -eq "}") {
+                $Depth--
+
+                if ($Depth -eq 0) {
+                    return [PSCustomObject]@{
+                        NameIndex  = $Index
+                        OpenIndex  = $OpenIndex
+                        CloseIndex = $BlockIndex
+                    }
+                }
+            }
+        }
+
+        throw "VDF block was opened but not closed: $Name"
+    }
+
+    return $null
+}
+
+function Get-WorkshopItemManifestStatus {
+    param(
+        [Parameter(Mandatory)]
+        [string] $ManifestPath,
+
+        [Parameter(Mandatory)]
+        [string] $AppId,
+
+        [Parameter(Mandatory)]
+        [string] $ModId
+    )
+
+    $Encoding = Get-WorkshopManifestEncoding `
+        -Path $ManifestPath
+
+    $Lines = @(
+        [System.IO.File]::ReadAllLines(
+            $ManifestPath,
+            $Encoding
+        )
+    )
+
+    $InstalledItems = Get-VdfSectionItems `
+        -Lines $Lines `
+        -SectionName "WorkshopItemsInstalled"
+
+    $DetailsItems = Get-VdfSectionItems `
+        -Lines $Lines `
+        -SectionName "WorkshopItemDetails"
+
+    $InstalledManifest = ""
+    $SelectedManifest = ""
+    $LatestManifest = ""
+
+    if ($InstalledItems.ContainsKey($ModId)) {
+        $InstalledManifest = [string] (
+            $InstalledItems[$ModId]["manifest"]
+        )
+    }
+
+    if ($DetailsItems.ContainsKey($ModId)) {
+        $SelectedManifest = [string] (
+            $DetailsItems[$ModId]["manifest"]
+        )
+
+        $LatestManifest = [string] (
+            $DetailsItems[$ModId]["latest_manifest"]
+        )
+    }
+
+    $WorkshopFolder = Split-Path `
+        -Path $ManifestPath `
+        -Parent
+
+    $ItemFolder = Join-Path `
+        $WorkshopFolder `
+        "content\$AppId\$ModId"
+
+    return [PSCustomObject]@{
+        InstalledManifest = $InstalledManifest
+        SelectedManifest  = $SelectedManifest
+        LatestManifest    = $LatestManifest
+        ItemFolder        = $ItemFolder
+        ItemFolderExists  = (
+            Test-Path -LiteralPath $ItemFolder
+        )
+    }
+}
+
+function Stop-SteamForWorkshopRepair {
+    param(
+        [Parameter(Mandatory)]
+        [string] $SteamExe
+    )
+
+    $SteamProcesses = @(
+        Get-Process `
+            -Name "steam" `
+            -ErrorAction SilentlyContinue
+    )
+
+    if ($SteamProcesses.Count -eq 0) {
+        return
+    }
+
+    Start-Process `
+        -FilePath $SteamExe `
+        -ArgumentList "-shutdown" `
+        -WindowStyle Hidden |
+        Out-Null
+
+    $Deadline = (Get-Date).AddSeconds(120)
+
+    while (
+        (Get-Process `
+            -Name "steam" `
+            -ErrorAction SilentlyContinue) -and
+        (Get-Date) -lt $Deadline
+    ) {
+        Start-Sleep -Seconds 2
+    }
+
+    if (
+        Get-Process `
+            -Name "steam" `
+            -ErrorAction SilentlyContinue
+    ) {
+        throw (
+            "Steam did not close within 120 seconds. " +
+            "No forced termination was attempted."
+        )
+    }
+}
+
+function Start-SteamAfterWorkshopRepair {
+    param(
+        [Parameter(Mandatory)]
+        [string] $SteamExe,
+
+        [Parameter(Mandatory)]
+        [int] $InitializationDelaySeconds
+    )
+
+    Start-Process `
+        -FilePath $SteamExe |
+        Out-Null
+
+    $Deadline = (Get-Date).AddSeconds(90)
+
+    while (
+        -not (
+            Get-Process `
+                -Name "steam" `
+                -ErrorAction SilentlyContinue
+        ) -and
+        (Get-Date) -lt $Deadline
+    ) {
+        Start-Sleep -Seconds 2
+    }
+
+    if (
+        -not (
+            Get-Process `
+                -Name "steam" `
+                -ErrorAction SilentlyContinue
+        )
+    ) {
+        throw "Steam did not start after the Workshop repair."
+    }
+
+    Start-Sleep -Seconds $InitializationDelaySeconds
+}
+
+function Invoke-WorkshopRecordRepair {
+    param(
+        [Parameter(Mandatory)]
+        [string] $SteamExe,
+
+        [Parameter(Mandatory)]
+        [string] $ManifestPath,
+
+        [Parameter(Mandatory)]
+        [string] $AppId,
+
+        [Parameter(Mandatory)]
+        [string] $ModId,
+
+        [Parameter(Mandatory)]
+        [string] $TargetManifest,
+
+        [Parameter(Mandatory)]
+        [string] $GameProcessName,
+
+        [Parameter(Mandatory)]
+        [int] $InitializationDelaySeconds,
+
+        [Parameter(Mandatory)]
+        [int] $TimeoutMinutes
+    )
+
+    if (
+        Get-Process `
+            -Name $GameProcessName `
+            -ErrorAction SilentlyContinue
+    ) {
+        return [PSCustomObject]@{
+            Success    = $false
+            Reason     = "$GameProcessName started before the repair."
+            BackupPath = ""
+        }
+    }
+
+    $InitialStatus = Get-WorkshopItemManifestStatus `
+        -ManifestPath $ManifestPath `
+        -AppId $AppId `
+        -ModId $ModId
+
+    if (
+        $InitialStatus.InstalledManifest -eq $TargetManifest -and
+        $InitialStatus.SelectedManifest -eq $TargetManifest -and
+        $InitialStatus.ItemFolderExists
+    ) {
+        return [PSCustomObject]@{
+            Success           = $true
+            AlreadyCurrent    = $true
+            InstalledManifest = $InitialStatus.InstalledManifest
+            SelectedManifest  = $InitialStatus.SelectedManifest
+            BackupPath        = ""
+        }
+    }
+
+    $Timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+
+    $RepairRoot = Join-Path `
+        $DataFolder `
+        "repair-backups\$ModId-$Timestamp"
+
+    $ManifestBackup = Join-Path `
+        $RepairRoot `
+        "workshop-manifest.original"
+
+    $ContentBackup = Join-Path `
+        $RepairRoot `
+        "content-original"
+
+    $FailedContent = Join-Path `
+        $RepairRoot `
+        "failed-new-content"
+
+    New-Item `
+        -ItemType Directory `
+        -Path $RepairRoot `
+        -Force |
+        Out-Null
+
+    $MutationStarted = $false
+    $SteamStopped = $false
+
+    try {
+        Stop-SteamForWorkshopRepair `
+            -SteamExe $SteamExe
+
+        $SteamStopped = $true
+
+        $Encoding = Get-WorkshopManifestEncoding `
+            -Path $ManifestPath
+
+        $Lines = @(
+            [System.IO.File]::ReadAllLines(
+                $ManifestPath,
+                $Encoding
+            )
+        )
+
+        $InstalledSection = Find-NamedVdfBlock `
+            -Lines $Lines `
+            -Name "WorkshopItemsInstalled"
+
+        $DetailsSection = Find-NamedVdfBlock `
+            -Lines $Lines `
+            -Name "WorkshopItemDetails"
+
+        if (
+            $null -eq $InstalledSection -or
+            $null -eq $DetailsSection
+        ) {
+            throw "Required Workshop manifest sections were not found."
+        }
+
+        $InstalledItem = Find-NamedVdfBlock `
+            -Lines $Lines `
+            -Name $ModId `
+            -SearchStart ($InstalledSection.OpenIndex + 1) `
+            -SearchEnd ($InstalledSection.CloseIndex - 1)
+
+        $DetailsItem = Find-NamedVdfBlock `
+            -Lines $Lines `
+            -Name $ModId `
+            -SearchStart ($DetailsSection.OpenIndex + 1) `
+            -SearchEnd ($DetailsSection.CloseIndex - 1)
+
+        if (
+            $null -eq $InstalledItem -or
+            $null -eq $DetailsItem
+        ) {
+            throw (
+                "Both Workshop records could not be found " +
+                "for item $ModId."
+            )
+        }
+
+        Copy-Item `
+            -LiteralPath $ManifestPath `
+            -Destination $ManifestBackup `
+            -Force
+
+        $MutationStarted = $true
+
+        if (
+            Test-Path `
+                -LiteralPath $InitialStatus.ItemFolder
+        ) {
+            Move-Item `
+                -LiteralPath $InitialStatus.ItemFolder `
+                -Destination $ContentBackup
+        }
+
+        $MutableLines = (
+            [System.Collections.Generic.List[string]]::new()
+        )
+
+        $MutableLines.AddRange(
+            [string[]] $Lines
+        )
+
+        $Ranges = @(
+            $InstalledItem
+            $DetailsItem
+        ) |
+            Sort-Object NameIndex -Descending
+
+        foreach ($Range in $Ranges) {
+            $RemoveCount = (
+                $Range.CloseIndex -
+                $Range.NameIndex +
+                1
+            )
+
+            $MutableLines.RemoveRange(
+                $Range.NameIndex,
+                $RemoveCount
+            )
+        }
+
+        $RemainingIdCount = @(
+            $MutableLines |
+                Where-Object {
+                    $_.Trim() -eq ('"' + $ModId + '"')
+                }
+        ).Count
+
+        if ($RemainingIdCount -ne 0) {
+            throw (
+                "Workshop item records were not removed completely. " +
+                "Remaining record count: $RemainingIdCount"
+            )
+        }
+
+        $BraceDepth = 0
+
+        foreach ($Line in $MutableLines) {
+            $Trimmed = $Line.Trim()
+
+            if ($Trimmed -eq "{") {
+                $BraceDepth++
+                continue
+            }
+
+            if ($Trimmed -eq "}") {
+                $BraceDepth--
+
+                if ($BraceDepth -lt 0) {
+                    throw (
+                        "The edited Workshop manifest has " +
+                        "an invalid closing brace."
+                    )
+                }
+            }
+        }
+
+        if ($BraceDepth -ne 0) {
+            throw (
+                "The edited Workshop manifest has " +
+                "unbalanced braces."
+            )
+        }
+
+        [System.IO.File]::WriteAllLines(
+            $ManifestPath,
+            [string[]] $MutableLines,
+            $Encoding
+        )
+
+        Start-SteamAfterWorkshopRepair `
+            -SteamExe $SteamExe `
+            -InitializationDelaySeconds `
+                $InitializationDelaySeconds
+
+        $SteamStopped = $false
+
+        Start-Process `
+            -FilePath $SteamExe `
+            -ArgumentList @(
+                "-console",
+                "+workshop_download_item",
+                $AppId,
+                $ModId
+            ) |
+            Out-Null
+
+        $Deadline = (Get-Date).AddMinutes(
+            $TimeoutMinutes
+        )
+
+        while ((Get-Date) -lt $Deadline) {
+            Start-Sleep -Seconds 5
+
+            $CurrentStatus = $null
+
+            try {
+                $CurrentStatus = (
+                    Get-WorkshopItemManifestStatus `
+                        -ManifestPath $ManifestPath `
+                        -AppId $AppId `
+                        -ModId $ModId
+                )
+            }
+            catch {
+                continue
+            }
+
+            if (
+                $CurrentStatus.InstalledManifest -eq
+                    $TargetManifest -and
+                $CurrentStatus.SelectedManifest -eq
+                    $TargetManifest -and
+                $CurrentStatus.ItemFolderExists
+            ) {
+                return [PSCustomObject]@{
+                    Success           = $true
+                    AlreadyCurrent    = $false
+                    InstalledManifest = (
+                        $CurrentStatus.InstalledManifest
+                    )
+                    SelectedManifest  = (
+                        $CurrentStatus.SelectedManifest
+                    )
+                    BackupPath        = $RepairRoot
+                }
+            }
+        }
+
+        $FinalStatus = Get-WorkshopItemManifestStatus `
+            -ManifestPath $ManifestPath `
+            -AppId $AppId `
+            -ModId $ModId
+
+        throw (
+            "Steam did not install the target manifest. " +
+            "Installed=$($FinalStatus.InstalledManifest); " +
+            "Selected=$($FinalStatus.SelectedManifest); " +
+            "Target=$TargetManifest"
+        )
+    }
+    catch {
+        $FailureReason = $_.Exception.Message
+
+        try {
+            if (
+                Get-Process `
+                    -Name "steam" `
+                    -ErrorAction SilentlyContinue
+            ) {
+                Stop-SteamForWorkshopRepair `
+                    -SteamExe $SteamExe
+
+                $SteamStopped = $true
+            }
+
+            if ($MutationStarted) {
+                if (
+                    Test-Path `
+                        -LiteralPath $InitialStatus.ItemFolder
+                ) {
+                    Move-Item `
+                        -LiteralPath $InitialStatus.ItemFolder `
+                        -Destination $FailedContent
+                }
+
+                Copy-Item `
+                    -LiteralPath $ManifestBackup `
+                    -Destination $ManifestPath `
+                    -Force
+
+                if (
+                    Test-Path `
+                        -LiteralPath $ContentBackup
+                ) {
+                    Move-Item `
+                        -LiteralPath $ContentBackup `
+                        -Destination $InitialStatus.ItemFolder
+                }
+            }
+
+            if ($SteamStopped) {
+                Start-SteamAfterWorkshopRepair `
+                    -SteamExe $SteamExe `
+                    -InitializationDelaySeconds `
+                        $InitializationDelaySeconds
+
+                $SteamStopped = $false
+            }
+        }
+        catch {
+            throw (
+                "Workshop repair rollback failed. " +
+                "Backup directory: $RepairRoot | " +
+                "Original failure: $FailureReason | " +
+                "Rollback failure: $($_.Exception.Message)"
+            )
+        }
+
+        return [PSCustomObject]@{
+            Success    = $false
+            Reason     = $FailureReason
+            BackupPath = $RepairRoot
+        }
+    }
+}
 $Mutex = [System.Threading.Mutex]::new(
     $false,
     "Local\CK3WorkshopAutoUpdater"
@@ -524,8 +1164,10 @@ try {
     $StateChanged = $false
     $Candidates = @()
     $UnavailableCount = 0
-    $SteamSelectedCount = 0
-    $ApiDifferenceCount = 0
+    $ApiTargetCount = 0
+    $CachedLatestTargetCount = 0
+    $SelectedFallbackCount = 0
+    $SelectionDifferenceCount = 0
 
     foreach ($ModId in $ModIds) {
         $Local = $InstalledItems[$ModId]
@@ -542,12 +1184,14 @@ try {
         }
 
         $LocalManifest = [string] $Local.manifest
-        $ApiManifest = ""
         $SelectedManifest = ""
+        $CachedLatestManifest = ""
+        $ApiManifest = ""
         $Name = "Workshop item"
 
         if ($Details) {
             $SelectedManifest = [string] $Details.manifest
+            $CachedLatestManifest = [string] $Details.latest_manifest
         }
 
         if ($RemoteAvailable) {
@@ -561,9 +1205,15 @@ try {
                 $Name = [string] $Remote.title
             }
         }
+
         $HasSelectedManifest = (
             -not [string]::IsNullOrWhiteSpace($SelectedManifest) -and
             $SelectedManifest -ne "0"
+        )
+
+        $HasCachedLatestManifest = (
+            -not [string]::IsNullOrWhiteSpace($CachedLatestManifest) -and
+            $CachedLatestManifest -ne "0"
         )
 
         $HasApiManifest = (
@@ -571,20 +1221,23 @@ try {
             $ApiManifest -ne "0"
         )
 
-        $TargetManifest = $ApiManifest
-        $ManifestSource = "WebApi"
+        $TargetManifest = ""
+        $ManifestSource = ""
 
-        if ($HasSelectedManifest) {
+        if ($HasApiManifest) {
+            $TargetManifest = $ApiManifest
+            $ManifestSource = "WebApiLatest"
+            $ApiTargetCount++
+        }
+        elseif ($HasCachedLatestManifest) {
+            $TargetManifest = $CachedLatestManifest
+            $ManifestSource = "SteamCachedLatest"
+            $CachedLatestTargetCount++
+        }
+        elseif ($HasSelectedManifest) {
             $TargetManifest = $SelectedManifest
-            $ManifestSource = "SteamClient"
-            $SteamSelectedCount++
-
-            if (
-                $HasApiManifest -and
-                $SelectedManifest -ne $ApiManifest
-            ) {
-                $ApiDifferenceCount++
-            }
+            $ManifestSource = "SelectedFallback"
+            $SelectedFallbackCount++
         }
 
         if (
@@ -594,14 +1247,21 @@ try {
             continue
         }
 
-        if ($TargetManifest -eq $LocalManifest) {
+        if (
+            $HasSelectedManifest -and
+            $SelectedManifest -ne $TargetManifest
+        ) {
+            $SelectionDifferenceCount++
+        }
+
+        if ($LocalManifest -eq $TargetManifest) {
             if ($State.ContainsKey($ModId)) {
                 [void] $State.Remove($ModId)
                 $StateChanged = $true
 
                 Write-Log -Message ((
                     "Resolved state removed: {0} [{1}] — the installed " +
-                    "manifest already matches Steam's selected manifest."
+                    "manifest already matches the latest manifest."
                 ) -f @(
                     $Name
                     $ModId
@@ -612,19 +1272,23 @@ try {
         }
 
         $Candidates += [PSCustomObject]@{
-            ModId          = $ModId
-            Name           = $Name
-            LocalManifest  = $LocalManifest
-            TargetManifest = $TargetManifest
-            ApiManifest    = $ApiManifest
-            ManifestSource = $ManifestSource
+            ModId               = $ModId
+            Name                = $Name
+            LocalManifest       = $LocalManifest
+            SelectedManifest    = $SelectedManifest
+            CachedLatestManifest = $CachedLatestManifest
+            ApiManifest         = $ApiManifest
+            TargetManifest      = $TargetManifest
+            ManifestSource      = $ManifestSource
         }
     }
 
-    Write-Log "Items with a different selected manifest: $($Candidates.Count)"
+    Write-Log "Items with a different latest manifest: $($Candidates.Count)"
     Write-Log "Items unavailable through the public API: $UnavailableCount"
-    Write-Log "Items using Steam-selected manifests: $SteamSelectedCount"
-    Write-Log "Items where API latest differs from Steam selection: $ApiDifferenceCount"
+    Write-Log "Items using API latest manifests: $ApiTargetCount"
+    Write-Log "Items using cached latest manifests: $CachedLatestTargetCount"
+    Write-Log "Items using selected-manifest fallback: $SelectedFallbackCount"
+    Write-Log "Items where Steam selection differs from latest: $SelectionDifferenceCount"
 
     if ($StateChanged) {
         Save-State -State $State
@@ -635,57 +1299,109 @@ try {
         exit 0
     }
 
+    $RepairCandidates = @()
+
     foreach ($Candidate in $Candidates) {
         $StateEntry = $State[$Candidate.ModId]
         $StoredTargetManifest = ""
-        $Suppressed = $false
+        $StateStatus = ""
+        $StateMatchesTarget = $false
         $RetryAfter = $null
 
         if ($StateEntry) {
-            $StoredTargetManifest = [string] $StateEntry.TargetManifest
+            $StateStatus = [string] $StateEntry.Status
+            $StoredTargetManifest = [string] (
+                $StateEntry.TargetManifest
+            )
 
-            if ([string]::IsNullOrWhiteSpace($StoredTargetManifest)) {
-                $StoredTargetManifest = [string] $StateEntry.RemoteManifest
+            if (
+                [string]::IsNullOrWhiteSpace(
+                    $StoredTargetManifest
+                )
+            ) {
+                $StoredTargetManifest = [string] (
+                    $StateEntry.RemoteManifest
+                )
             }
+
+            $StateMatchesTarget = (
+                $StoredTargetManifest -eq
+                    $Candidate.TargetManifest -and
+                [string] $StateEntry.GameBuildId -eq
+                    $GameBuildId
+            )
         }
 
         if (
-            $StateEntry -and
-            [string] $StateEntry.Status -eq "NoChange" -and
-            $StoredTargetManifest -eq $Candidate.TargetManifest -and
-            [string] $StateEntry.GameBuildId -eq $GameBuildId
+            $StateMatchesTarget -and
+            $StateStatus -in @(
+                "RepairPending",
+                "NoChange"
+            )
         ) {
+            $RepairCandidates += $Candidate
+
+            Write-Log -Message ((
+                "Repair pending: {0} [{1}] — a clean Workshop " +
+                "re-registration will be attempted."
+            ) -f @(
+                $Candidate.Name
+                $Candidate.ModId
+            ))
+
+            continue
+        }
+
+        if (
+            $StateMatchesTarget -and
+            $StateStatus -eq "RepairFailed"
+        ) {
+            $Suppressed = $false
+
             try {
                 $RetryAfter = [DateTimeOffset]::Parse(
                     [string] $StateEntry.RetryAfter
                 )
 
-                if ([DateTimeOffset]::UtcNow -lt $RetryAfter) {
+                if (
+                    [DateTimeOffset]::UtcNow -lt
+                    $RetryAfter
+                ) {
                     $Suppressed = $true
                 }
             }
             catch {
                 $Suppressed = $false
             }
-        }
 
-        if ($Suppressed) {
-            Write-Log -Message ((
-                "Skipped: {0} [{1}] — Steam previously returned OK without changing " +
-                "the installed manifest. Retry after: {2}"
-            ) -f @(
-                $Candidate.Name
-                $Candidate.ModId
-                $RetryAfter.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
-            ))
+            if ($Suppressed) {
+                Write-Log -Message ((
+                    "Repair skipped: {0} [{1}] — retry after {2}."
+                ) -f @(
+                    $Candidate.Name
+                    $Candidate.ModId
+                    $RetryAfter.ToLocalTime().ToString(
+                        "yyyy-MM-dd HH:mm:ss"
+                    )
+                ))
 
+                continue
+            }
+
+            $RepairCandidates += $Candidate
             continue
         }
 
         $BeforeManifest = $Candidate.LocalManifest
-        $InitialLineCount = @(Get-Content -LiteralPath $WorkshopLog).Count
 
-        Write-Log "Update requested: $($Candidate.Name) [$($Candidate.ModId)]"
+        $InitialLineCount = @(
+            Get-Content -LiteralPath $WorkshopLog
+        ).Count
+
+        Write-Log (
+            "Update requested: " +
+            "$($Candidate.Name) [$($Candidate.ModId)]"
+        )
 
         Start-Process `
             -FilePath $SteamInfo.Exe `
@@ -694,7 +1410,8 @@ try {
                 "+workshop_download_item",
                 $AppId,
                 $Candidate.ModId
-            )
+            ) |
+            Out-Null
 
         $Result = Wait-WorkshopResult `
             -WorkshopLog $WorkshopLog `
@@ -704,12 +1421,28 @@ try {
 
         Start-Sleep -Seconds 2
 
-        $AfterItems = Get-InstalledItems -ManifestPath $ManifestPath
-        $AfterManifest = [string] $AfterItems[$Candidate.ModId].manifest
+        $AfterItems = Get-InstalledItems `
+            -ManifestPath $ManifestPath
 
-        if ($AfterManifest -eq $Candidate.TargetManifest) {
+        $AfterManifest = ""
+
+        if (
+            $AfterItems.ContainsKey(
+                $Candidate.ModId
+            )
+        ) {
+            $AfterManifest = [string] (
+                $AfterItems[$Candidate.ModId].manifest
+            )
+        }
+
+        if (
+            $AfterManifest -eq
+            $Candidate.TargetManifest
+        ) {
             Write-Log -Message ((
-                "Updated: {0} [{1}] — installed manifest changed from {2} to {3}."
+                "Updated: {0} [{1}] — installed manifest " +
+                "changed from {2} to {3}."
             ) -f @(
                 $Candidate.Name
                 $Candidate.ModId
@@ -717,55 +1450,142 @@ try {
                 $AfterManifest
             ))
 
-            [void] $State.Remove($Candidate.ModId)
-        }
-        elseif ($AfterManifest -ne $BeforeManifest) {
-            Write-Log -Message ((
-                "Incomplete: {0} [{1}] — the installed manifest changed from {2} " +
-                "to {3}, but Steam's selected target is {4}."
-            ) -f @(
-                $Candidate.Name
+            [void] $State.Remove(
                 $Candidate.ModId
-                $BeforeManifest
-                $AfterManifest
-                $Candidate.TargetManifest
-            ))
-        }
-        elseif ($Result.Completed -and $Result.Result -eq "OK") {
-            $RetryAfter = [DateTimeOffset]::UtcNow.AddHours(
-                $NoChangeRetryHours
             )
 
+            Save-State -State $State
+            continue
+        }
+
+        if (
+            $Result.Completed -and
+            $Result.Result -eq "OK"
+        ) {
             $State[$Candidate.ModId] = @{
-                Status         = "NoChange"
-                TargetManifest = $Candidate.TargetManifest
-                LocalManifest  = $BeforeManifest
+                Status           = "RepairPending"
+                TargetManifest   = $Candidate.TargetManifest
+                LocalManifest    = $AfterManifest
+                SelectedManifest = (
+                    $Candidate.SelectedManifest
+                )
+                GameBuildId      = $GameBuildId
+                LastAttempt      = (
+                    [DateTimeOffset]::UtcNow.ToString("o")
+                )
+            }
+
+            $RepairCandidates += $Candidate
+
+            Write-Log -Message ((
+                "Repair queued: {0} [{1}] — Steam returned OK, " +
+                "but the latest manifest was not installed."
+            ) -f @(
+                $Candidate.Name
+                $Candidate.ModId
+            ))
+
+            Save-State -State $State
+            continue
+        }
+
+        Write-Log -Message ((
+            "Incomplete: {0} [{1}] — Steam result: {2}; " +
+            "installed manifest: {3}; target manifest: {4}."
+        ) -f @(
+            $Candidate.Name
+            $Candidate.ModId
+            $Result.Result
+            $AfterManifest
+            $Candidate.TargetManifest
+        ))
+
+        Save-State -State $State
+    }
+
+    if ($RepairCandidates.Count -gt 0) {
+        $RepairCandidate = $RepairCandidates[0]
+
+        Write-Log -Message ((
+            "Starting clean Workshop repair: {0} [{1}]"
+        ) -f @(
+            $RepairCandidate.Name
+            $RepairCandidate.ModId
+        ))
+
+        $RepairResult = Invoke-WorkshopRecordRepair `
+            -SteamExe $SteamInfo.Exe `
+            -ManifestPath $ManifestPath `
+            -AppId $AppId `
+            -ModId $RepairCandidate.ModId `
+            -TargetManifest $RepairCandidate.TargetManifest `
+            -GameProcessName $GameProcessName `
+            -InitializationDelaySeconds `
+                $SteamInitializationDelaySeconds `
+            -TimeoutMinutes $WorkshopResultTimeoutMinutes
+
+        if ($RepairResult.Success) {
+            [void] $State.Remove(
+                $RepairCandidate.ModId
+            )
+
+            Write-Log -Message ((
+                "Repair succeeded: {0} [{1}] — installed " +
+                "manifest is now {2}. Backup: {3}"
+            ) -f @(
+                $RepairCandidate.Name
+                $RepairCandidate.ModId
+                $RepairResult.InstalledManifest
+                $RepairResult.BackupPath
+            ))
+        }
+
+        if (-not $RepairResult.Success) {
+            $RetryAfter = (
+                [DateTimeOffset]::UtcNow.AddHours(
+                    $NoChangeRetryHours
+                )
+            )
+
+            $State[$RepairCandidate.ModId] = @{
+                Status         = "RepairFailed"
+                TargetManifest = (
+                    $RepairCandidate.TargetManifest
+                )
+                LocalManifest  = (
+                    $RepairCandidate.LocalManifest
+                )
                 GameBuildId    = $GameBuildId
-                LastAttempt    = [DateTimeOffset]::UtcNow.ToString("o")
+                LastAttempt    = (
+                    [DateTimeOffset]::UtcNow.ToString("o")
+                )
                 RetryAfter     = $RetryAfter.ToString("o")
+                FailureReason  = $RepairResult.Reason
+                BackupPath     = $RepairResult.BackupPath
             }
 
             Write-Log -Message ((
-                "No change: {0} [{1}] — Steam returned OK, but the installed " +
-                "manifest did not change. The same selected manifest will not be " +
-                "forced again until {2}."
+                "Repair failed: {0} [{1}] — {2}. " +
+                "Retry after: {3}. Backup: {4}"
             ) -f @(
-                $Candidate.Name
-                $Candidate.ModId
-                $RetryAfter.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
-            ))
-        }
-        else {
-            Write-Log -Message ((
-                "Incomplete: {0} [{1}] — Steam result: {2}"
-            ) -f @(
-                $Candidate.Name
-                $Candidate.ModId
-                $Result.Result
+                $RepairCandidate.Name
+                $RepairCandidate.ModId
+                $RepairResult.Reason
+                $RetryAfter.ToLocalTime().ToString(
+                    "yyyy-MM-dd HH:mm:ss"
+                )
+                $RepairResult.BackupPath
             ))
         }
 
         Save-State -State $State
+
+        if ($RepairCandidates.Count -gt 1) {
+            Write-Log (
+                "$($RepairCandidates.Count - 1) additional " +
+                "repair candidate(s) remain pending."
+            )
+        }
     }
 
     Write-Log "Workshop check completed."
