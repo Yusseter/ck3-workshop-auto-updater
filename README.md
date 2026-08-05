@@ -21,21 +21,32 @@ Steam Client Beta was used during development, but it has not been proven to be 
 
 ## Installation
 
-1. Extract the downloaded ZIP anywhere.
-2. Double-click `Install.cmd`.
-3. Keep Steam's own **Run Steam when my computer starts** setting enabled.
+### Windows Setup executable — recommended
 
-The installer copies the working files to:
+1. Open the latest release.
+2. Download `CK3WorkshopAutoUpdater-Setup-vX.Y.Z.exe`.
+3. Run the setup file.
+
+The installer places the utility under:
 
 ```text
 %LOCALAPPDATA%\CK3WorkshopAutoUpdater
 ```
 
-It also creates a hidden startup entry. The extracted source folder can then be moved, renamed, used as a Git repository, or deleted.
+It creates the hidden Windows startup entry automatically and adds the utility to Windows **Installed apps**. PowerShell 7 is preferred when available; Windows PowerShell 5.1 is used as a fallback.
+
+Existing configuration, state, and log files are preserved when installing a newer version.
+
+### Portable ZIP
+
+1. Download and extract the ZIP archive.
+2. Double-click `Install.cmd`.
+3. Keep Steam's own **Run Steam when my computer starts** setting enabled.
+
+The extracted source folder can be moved, renamed, used as a Git repository, or deleted after installation.
 
 You do not need to open or manually run any `.ps1` file.
-
-## Included commands
+## Included portable commands
 
 - `Install.cmd` — installs or updates the utility.
 - `Run Now.cmd` — starts a check immediately and invisibly.
@@ -87,10 +98,11 @@ Edit the installed `config.json` to change timing and retry behavior. Re-running
 
 ## Uninstallation
 
-Double-click `Uninstall.cmd`.
+For the Setup executable installation, open Windows **Installed apps**, find **CK3 Workshop Auto Updater**, and select **Uninstall**.
+
+For the portable ZIP installation, double-click `Uninstall.cmd`.
 
 Steam, CK3, Workshop subscriptions, and Workshop content are left unchanged.
-
 ## Building a release archive
 
 Release archives can be created by double-clicking:

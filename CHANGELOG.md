@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0 — Unreleased
+
+- Added a user-friendly Windows Setup executable.
+- Added automatic installer builds through GitHub Actions.
+- Added an Installed Apps uninstaller and Start menu shortcuts.
+- Preserved existing configuration, state, and log files during upgrades.
+
 ## 0.2.0 — 2026-08-05
 
 - Removed the PowerShell 7 requirement while continuing to prefer PowerShell 7 when installed.
