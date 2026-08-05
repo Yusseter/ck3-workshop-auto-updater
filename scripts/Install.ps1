@@ -8,14 +8,45 @@ $StartupFolder = [Environment]::GetFolderPath("Startup")
 $ShortcutPath = Join-Path $StartupFolder "CK3 Workshop Auto Updater.lnk"
 $DisabledShortcutPath = "$ShortcutPath.disabled"
 
+$PowerShellPath = $null
+
+$PowerShell7Command = Get-Command `
+    pwsh.exe `
+    -ErrorAction SilentlyContinue |
+    Select-Object -First 1
+
+if ($PowerShell7Command) {
+    $PowerShellPath = [string] $PowerShell7Command.Source
+}
+
+$DefaultPowerShell7Path = Join-Path `
+    $env:ProgramFiles `
+    "PowerShell\7\pwsh.exe"
+
+if (
+    [string]::IsNullOrWhiteSpace($PowerShellPath) -and
+    (Test-Path -LiteralPath $DefaultPowerShell7Path)
+) {
+    $PowerShellPath = $DefaultPowerShell7Path
+}
+
 $WindowsPowerShellPath = Join-Path `
     $env:SystemRoot `
     "System32\WindowsPowerShell\v1.0\powershell.exe"
 
-if (-not (Test-Path -LiteralPath $WindowsPowerShellPath)) {
-    throw "Windows PowerShell 5.1 was not found: $WindowsPowerShellPath"
+if (
+    [string]::IsNullOrWhiteSpace($PowerShellPath) -and
+    (Test-Path -LiteralPath $WindowsPowerShellPath)
+) {
+    $PowerShellPath = $WindowsPowerShellPath
 }
 
+if (
+    [string]::IsNullOrWhiteSpace($PowerShellPath) -or
+    -not (Test-Path -LiteralPath $PowerShellPath)
+) {
+    throw "Neither PowerShell 7 nor Windows PowerShell 5.1 was found."
+}
 if (-not (Test-Path -LiteralPath $SourceFolder)) {
     throw "Source folder not found: $SourceFolder"
 }
@@ -53,7 +84,6 @@ foreach ($FileName in @("State.json", "History.log", "LastRun.log")) {
 
 $RuntimeScript = Join-Path $InstallFolder "CK3WorkshopAutoUpdater.ps1"
 $VbsPath = Join-Path $InstallFolder "RunHidden.vbs"
-$PowerShellPath = $WindowsPowerShellPath
 
 $CommandLine = (
     '"' + $PowerShellPath +
@@ -93,6 +123,7 @@ Write-Host "CK3 Workshop Auto Updater was installed successfully." -ForegroundCo
 Write-Host "Install folder : $InstallFolder"
 Write-Host "Startup entry  : $ShortcutPath"
 Write-Host "Data folder    : $DataFolder"
+Write-Host "PowerShell     : $PowerShellPath"
 Write-Host ""
 Write-Host "The existing Steam startup setting was not changed."
 Write-Host "The updater will run invisibly at Windows sign-in."
