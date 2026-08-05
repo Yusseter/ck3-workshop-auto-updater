@@ -6,22 +6,28 @@
 #define AppPublisher "Yusseter"
 #define AppURL "https://github.com/Yusseter/ck3-workshop-auto-updater"
 
-#ifdef DiagnosticNoCompression
-    #ifdef DiagnosticNoStartup
-        #define OutputSuffix "-no-compression-no-startup-test"
+#ifdef DiagnosticNoVbs
+    #define OutputSuffix "-no-compression-no-startup-no-vbs-test"
+#else
+    #ifdef DiagnosticNoCompression
+        #ifdef DiagnosticNoStartup
+            #define OutputSuffix "-no-compression-no-startup-test"
+        #else
+            #define OutputSuffix "-no-compression-test"
+        #endif
     #else
-        #define OutputSuffix "-no-compression-test"
+        #ifdef DiagnosticNoStartup
+            #define OutputSuffix "-no-startup-test"
+        #else
+            #define OutputSuffix ""
+        #endif
     #endif
+#endif
 
+#ifdef DiagnosticNoCompression
     #define CompressionMode "none"
     #define SolidCompressionMode "no"
 #else
-    #ifdef DiagnosticNoStartup
-        #define OutputSuffix "-no-startup-test"
-    #else
-        #define OutputSuffix ""
-    #endif
-
     #define CompressionMode "lzma2"
     #define SolidCompressionMode "yes"
 #endif
@@ -51,16 +57,22 @@ UninstallDisplayName={#AppName}
 [Files]
 Source: "..\src\CK3WorkshopAutoUpdater.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\src\config.json"; DestDir: "{app}"; Flags: onlyifdoesntexist
+#ifndef DiagnosticNoVbs
 Source: "RunHidden.vbs"; DestDir: "{app}"; Flags: ignoreversion
+#endif
 
 [Dirs]
 Name: "{app}\data"
 
 [Icons]
 #ifndef DiagnosticNoStartup
+#ifndef DiagnosticNoVbs
 Name: "{userstartup}\CK3 Workshop Auto Updater"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\RunHidden.vbs"""; WorkingDir: "{app}"; Comment: "Checks CK3 Workshop items at Windows sign-in"
 #endif
+#endif
+#ifndef DiagnosticNoVbs
 Name: "{group}\Run Now"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\RunHidden.vbs"""; WorkingDir: "{app}"
+#endif
 Name: "{group}\Open Logs"; Filename: "{sys}\explorer.exe"; Parameters: """{app}\data"""
 Name: "{group}\Uninstall"; Filename: "{uninstallexe}"
 
