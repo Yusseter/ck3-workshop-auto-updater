@@ -153,6 +153,30 @@ function Get-InstalledItems {
     }
 }
 
+function Get-WorkshopItemDetails {
+    param(
+        [Parameter(Mandatory)]
+        [string] $ManifestPath
+    )
+
+    for ($Attempt = 1; $Attempt -le 10; $Attempt++) {
+        try {
+            $Lines = Get-Content -LiteralPath $ManifestPath -ErrorAction Stop
+
+            return Get-VdfSectionItems `
+                -Lines $Lines `
+                -SectionName "WorkshopItemDetails"
+        }
+        catch {
+            if ($Attempt -eq 10) {
+                throw
+            }
+
+            Start-Sleep -Seconds 1
+        }
+    }
+}
+
 function Get-SteamInformation {
     $Registry = Get-ItemProperty -Path "HKCU:\Software\Valve\Steam"
 
@@ -479,6 +503,9 @@ try {
 
     $InstalledItems = Get-InstalledItems -ManifestPath $ManifestPath
 
+    $WorkshopItemDetails = Get-WorkshopItemDetails `
+        -ManifestPath $ManifestPath
+
     $ModIds = @(
         $InstalledItems.Keys |
             Where-Object { $_ -match '^\d+$' } |
@@ -494,37 +521,114 @@ try {
         -RetryDelaySeconds $RequestRetryDelaySeconds
 
     $State = Get-State
+    $StateChanged = $false
     $Candidates = @()
     $UnavailableCount = 0
+    $SteamSelectedCount = 0
+    $ApiDifferenceCount = 0
 
     foreach ($ModId in $ModIds) {
         $Local = $InstalledItems[$ModId]
+        $Details = $WorkshopItemDetails[$ModId]
         $Remote = $RemoteItems[$ModId]
 
-        if ($null -eq $Remote -or [int] $Remote.result -ne 1) {
+        $RemoteAvailable = (
+            $null -ne $Remote -and
+            [int] $Remote.result -eq 1
+        )
+
+        if (-not $RemoteAvailable) {
             $UnavailableCount++
-            continue
         }
 
         $LocalManifest = [string] $Local.manifest
-        $RemoteManifest = [string] $Remote.hcontent_file
+        $ApiManifest = ""
+        $SelectedManifest = ""
+        $Name = "Workshop item"
+
+        if ($Details) {
+            $SelectedManifest = [string] $Details.manifest
+        }
+
+        if ($RemoteAvailable) {
+            $ApiManifest = [string] $Remote.hcontent_file
+
+            if (
+                -not [string]::IsNullOrWhiteSpace(
+                    [string] $Remote.title
+                )
+            ) {
+                $Name = [string] $Remote.title
+            }
+        }
+        $HasSelectedManifest = (
+            -not [string]::IsNullOrWhiteSpace($SelectedManifest) -and
+            $SelectedManifest -ne "0"
+        )
+
+        $HasApiManifest = (
+            -not [string]::IsNullOrWhiteSpace($ApiManifest) -and
+            $ApiManifest -ne "0"
+        )
+
+        $TargetManifest = $ApiManifest
+        $ManifestSource = "WebApi"
+
+        if ($HasSelectedManifest) {
+            $TargetManifest = $SelectedManifest
+            $ManifestSource = "SteamClient"
+            $SteamSelectedCount++
+
+            if (
+                $HasApiManifest -and
+                $SelectedManifest -ne $ApiManifest
+            ) {
+                $ApiDifferenceCount++
+            }
+        }
 
         if (
-            -not [string]::IsNullOrWhiteSpace($RemoteManifest) -and
-            $RemoteManifest -ne "0" -and
-            $RemoteManifest -ne $LocalManifest
+            [string]::IsNullOrWhiteSpace($TargetManifest) -or
+            $TargetManifest -eq "0"
         ) {
-            $Candidates += [PSCustomObject]@{
-                ModId          = $ModId
-                Name           = [string] $Remote.title
-                LocalManifest  = $LocalManifest
-                RemoteManifest = $RemoteManifest
+            continue
+        }
+
+        if ($TargetManifest -eq $LocalManifest) {
+            if ($State.ContainsKey($ModId)) {
+                [void] $State.Remove($ModId)
+                $StateChanged = $true
+
+                Write-Log -Message ((
+                    "Resolved state removed: {0} [{1}] — the installed " +
+                    "manifest already matches Steam's selected manifest."
+                ) -f @(
+                    $Name
+                    $ModId
+                ))
             }
+
+            continue
+        }
+
+        $Candidates += [PSCustomObject]@{
+            ModId          = $ModId
+            Name           = $Name
+            LocalManifest  = $LocalManifest
+            TargetManifest = $TargetManifest
+            ApiManifest    = $ApiManifest
+            ManifestSource = $ManifestSource
         }
     }
 
-    Write-Log "Items with a different remote manifest: $($Candidates.Count)"
+    Write-Log "Items with a different selected manifest: $($Candidates.Count)"
     Write-Log "Items unavailable through the public API: $UnavailableCount"
+    Write-Log "Items using Steam-selected manifests: $SteamSelectedCount"
+    Write-Log "Items where API latest differs from Steam selection: $ApiDifferenceCount"
+
+    if ($StateChanged) {
+        Save-State -State $State
+    }
 
     if ($Candidates.Count -eq 0) {
         Write-Log "No Workshop items require action."
@@ -533,13 +637,22 @@ try {
 
     foreach ($Candidate in $Candidates) {
         $StateEntry = $State[$Candidate.ModId]
+        $StoredTargetManifest = ""
         $Suppressed = $false
         $RetryAfter = $null
+
+        if ($StateEntry) {
+            $StoredTargetManifest = [string] $StateEntry.TargetManifest
+
+            if ([string]::IsNullOrWhiteSpace($StoredTargetManifest)) {
+                $StoredTargetManifest = [string] $StateEntry.RemoteManifest
+            }
+        }
 
         if (
             $StateEntry -and
             [string] $StateEntry.Status -eq "NoChange" -and
-            [string] $StateEntry.RemoteManifest -eq $Candidate.RemoteManifest -and
+            $StoredTargetManifest -eq $Candidate.TargetManifest -and
             [string] $StateEntry.GameBuildId -eq $GameBuildId
         ) {
             try {
@@ -594,7 +707,7 @@ try {
         $AfterItems = Get-InstalledItems -ManifestPath $ManifestPath
         $AfterManifest = [string] $AfterItems[$Candidate.ModId].manifest
 
-        if ($AfterManifest -ne $BeforeManifest) {
+        if ($AfterManifest -eq $Candidate.TargetManifest) {
             Write-Log -Message ((
                 "Updated: {0} [{1}] — installed manifest changed from {2} to {3}."
             ) -f @(
@@ -606,6 +719,18 @@ try {
 
             [void] $State.Remove($Candidate.ModId)
         }
+        elseif ($AfterManifest -ne $BeforeManifest) {
+            Write-Log -Message ((
+                "Incomplete: {0} [{1}] — the installed manifest changed from {2} " +
+                "to {3}, but Steam's selected target is {4}."
+            ) -f @(
+                $Candidate.Name
+                $Candidate.ModId
+                $BeforeManifest
+                $AfterManifest
+                $Candidate.TargetManifest
+            ))
+        }
         elseif ($Result.Completed -and $Result.Result -eq "OK") {
             $RetryAfter = [DateTimeOffset]::UtcNow.AddHours(
                 $NoChangeRetryHours
@@ -613,7 +738,7 @@ try {
 
             $State[$Candidate.ModId] = @{
                 Status         = "NoChange"
-                RemoteManifest = $Candidate.RemoteManifest
+                TargetManifest = $Candidate.TargetManifest
                 LocalManifest  = $BeforeManifest
                 GameBuildId    = $GameBuildId
                 LastAttempt    = [DateTimeOffset]::UtcNow.ToString("o")
@@ -622,7 +747,7 @@ try {
 
             Write-Log -Message ((
                 "No change: {0} [{1}] — Steam returned OK, but the installed " +
-                "manifest did not change. The same remote manifest will not be " +
+                "manifest did not change. The same selected manifest will not be " +
                 "forced again until {2}."
             ) -f @(
                 $Candidate.Name
