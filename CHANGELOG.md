@@ -2,9 +2,10 @@
 
 ## 0.2.0 — 2026-08-05
 
-- Removed the PowerShell 7 requirement.
+- Removed the PowerShell 7 requirement while continuing to prefer PowerShell 7 when installed.
+- Added automatic fallback to Windows PowerShell 5.1.
 - Added Windows PowerShell 5.1-compatible state loading.
-- Updated installation, hidden startup, and uninstallation to use Windows PowerShell included with Windows.
+- Updated installation, hidden startup, uninstallation, and release building to select the available PowerShell runtime automatically.
 - Added a release builder that creates versioned ZIP and SHA-256 files in `dist`.
 
 ## 0.1.1 — 2026-08-05

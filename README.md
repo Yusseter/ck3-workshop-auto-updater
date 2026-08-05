@@ -12,9 +12,10 @@ Tested on one Windows 11 system with:
 
 - Steam
 - Crusader Kings III (AppID `1158310`)
-- Windows PowerShell 5.1 (included with Windows)
+- PowerShell 7 (preferred when installed)
+- Windows PowerShell 5.1 fallback (included with Windows)
 
-PowerShell 7 is not required.
+PowerShell 7 is used automatically when available. Windows PowerShell 5.1 is used as a fallback, so PowerShell 7 is not required.
 
 Steam Client Beta was used during development, but it has not been proven to be required.
 
