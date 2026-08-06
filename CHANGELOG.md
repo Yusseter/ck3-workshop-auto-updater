@@ -9,9 +9,7 @@
 - Changed Workshop update detection to prefer the newest manifest reported by Steam's public Workshop API.
 - Added fallback to Steam's cached latest manifest when public API metadata is unavailable.
 - Changed the updater to attempt a normal Steam Workshop download before using repair mode.
-- Added controlled repair for Workshop's public Workshop API.
-- Added fallback to Steam's cached latest manifest when public API metadata is unavailable.
-- Changed items that remain stuck on outdated manifests after Steam reports a successful download.
+- Added controlled repair for Workshop items that remain stuck on outdated manifests after Steam reports a successful download.
 - Added automatic backups of the affected Workshop manifest records and mod content before repair.
 - Added automatic rollback when a repair does not complete successfully.
 - Limited clean Workshop repair to one affected item per updater run.
