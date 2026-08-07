@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.0 — Unreleased
+## 0.3.0 — 2026-08-07
 
 - Added a user-friendly Windows Setup executable.
 - Added automatic installer builds through GitHub Actions.
