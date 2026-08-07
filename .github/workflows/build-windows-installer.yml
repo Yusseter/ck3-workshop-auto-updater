@@ -107,10 +107,7 @@ jobs:
                   -Algorithm SHA256
           ).Hash.ToLowerInvariant()
 
-          $              Get-FileHash `
-                  -LiteralPath $setupFile.FullName `
-                  -Algorithm SHA256
-          ).Hash.ToLowerInvarianthashPath = [System.IO.Path]::ChangeExtension(
+          $hashPath = [System.IO.Path]::ChangeExtension(
               $setupFile.FullName,
               ".sha256"
           )
