@@ -190,7 +190,10 @@ The workflow:
 - Compiles the Inno Setup installer.
 - Creates a SHA-256 checksum file.
 - Uploads both files as a workflow artifact.
-- Attaches them to a published GitHub release when triggered by a release event.
+
+The installer is intentionally **not rebuilt when a GitHub release is published**.
+
+Release assets should be taken from the exact GitHub Actions artifact that was tested and validated. This ensures that the published installer has the same SHA-256 hash as the binary that was tested before release.
 
 ## Safety notes
 

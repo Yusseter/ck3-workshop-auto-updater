@@ -10,10 +10,6 @@ on:
       - "src/**"
       - "VERSION"
 
-  release:
-    types:
-      - published
-
 permissions:
   contents: read
 
@@ -21,9 +17,6 @@ jobs:
   build-installer:
     name: Build installer
     runs-on: windows-2022
-
-    permissions:
-      contents: write
 
     steps:
       - name: Check out repository
@@ -136,34 +129,3 @@ jobs:
             dist/*.sha256
           if-no-files-found: error
           retention-days: 14
-
-      - name: Attach installer to published release
-        if: github.event_name == 'release'
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: |
-          $assets = @(
-              Get-ChildItem `
-                  -LiteralPath "dist" `
-                  -File |
-                  Where-Object {
-                      $_.Extension -in @(".exe", ".sha256")
-                  } |
-                  Select-Object -ExpandProperty FullName
-          )
-
-          if ($assets.Count -ne 2) {
-              throw "Expected two release assets, found $($assets.Count)."
-          }
-
-          & gh release upload `
-              $env:RELEASE_TAG `
-              @assets `
-              --clobber `
-              --repo $env:GITHUB_REPOSITORY
-
-          if ($LASTEXITCODE -ne 0) {
-              throw "Uploading installer assets to the release failed."
-          }
