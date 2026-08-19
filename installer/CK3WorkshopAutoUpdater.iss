@@ -39,7 +39,7 @@ Name: "{app}\data"
 [Icons]
 Name: "{userstartup}\CK3 Workshop Auto Updater"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\RunHidden.vbs"""; WorkingDir: "{app}"; Comment: "Checks CK3 Workshop items at Windows sign-in"
 Name: "{group}\Run Now"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\RunHidden.vbs"""; WorkingDir: "{app}"
-Name: "{group}\Open Logs"; Filename: "{sys}\explorer.exe"; Parameters: """{app}\data"""
+Name: "{group}\Open Logs"; Filename: "{win}\explorer.exe"; Parameters: """{app}\data"""
 Name: "{group}\Uninstall"; Filename: "{uninstallexe}"
 
 [InstallDelete]
