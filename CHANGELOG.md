@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.1 — Unreleased
+## 0.3.1 — 2026-08-19
 
 - Fixed the Windows installer Open Logs shortcut to use the correct Explorer path.
 
