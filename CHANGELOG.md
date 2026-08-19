@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1 — Unreleased
+
+- Fixed the Windows installer Open Logs shortcut to use the correct Explorer path.
+
 ## 0.3.0 — 2026-08-07
 
 - Added a user-friendly Windows Setup executable.

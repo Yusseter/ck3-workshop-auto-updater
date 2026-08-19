@@ -8,7 +8,7 @@ It does **not** unsubscribe from mods, collect Steam credentials, or replace Ste
 
 ## Status
 
-Version: **0.3.0**
+Version: **0.3.1 (unreleased)**
 
 Tested on one Windows 11 system with:
 
